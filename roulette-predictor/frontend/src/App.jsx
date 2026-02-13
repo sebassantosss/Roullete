@@ -18,6 +18,12 @@ function App() {
   // Dozen analysis state
   const [dozenAnalysis, setDozenAnalysis] = useState(null);
   const [showDozenView, setShowDozenView] = useState(true);
+  const [showHistoricalNumbers, setShowHistoricalNumbers] = useState(true);
+  
+  // Predictions history for tracking hits
+  const [predictionsHistory, setPredictionsHistory] = useState([]);
+  const [dozenHits, setDozenHits] = useState(0);
+  const [dozenMisses, setDozenMisses] = useState(0);
 
   const analyzePatternsAndPredict = async (numbers) => {
     if (numbers.length < 5) {
@@ -73,9 +79,59 @@ function App() {
       return;
     }
 
+    // Track prediction before adding number
+    if (dozenAnalysis && dozenAnalysis.predictions) {
+      const dozens = Object.entries(dozenAnalysis.predictions)
+        .sort((a, b) => b[1] - a[1]);
+      
+      const top2Dozens = dozens.slice(0, 2).map(d => d[0]);
+      const actualDozen = getDozenName(getDozenFromNumber(num));
+      
+      const isHit = top2Dozens.includes(actualDozen);
+      
+      // Update history
+      const newPrediction = {
+        number: num,
+        actualDozen,
+        predictedDozens: top2Dozens,
+        probabilities: {
+          [top2Dozens[0]]: dozens[0][1],
+          [top2Dozens[1]]: dozens[1][1]
+        },
+        isHit,
+        timestamp: new Date()
+      };
+      
+      setPredictionsHistory([newPrediction, ...predictionsHistory].slice(0, 20));
+      
+      if (isHit) {
+        setDozenHits(dozenHits + 1);
+      } else {
+        setDozenMisses(dozenMisses + 1);
+      }
+    }
+
     setHistoricalNumbers([...historicalNumbers, num]);
     setInputValue('');
     setError('');
+  };
+
+  const getDozenFromNumber = (num) => {
+    if (num === 0) return 0;
+    if (num >= 1 && num <= 12) return 1;
+    if (num >= 13 && num <= 24) return 2;
+    if (num >= 25 && num <= 36) return 3;
+    return 0;
+  };
+
+  const getDozenName = (dozen) => {
+    switch(dozen) {
+      case 1: return '1st';
+      case 2: return '2nd';
+      case 3: return '3rd';
+      case 0: return 'zero';
+      default: return 'unknown';
+    }
   };
 
   const handleBulkLoad = () => {
@@ -99,6 +155,10 @@ function App() {
     setPredictions([]);
     setStatistics(null);
     setPatternsDetected([]);
+    setDozenAnalysis(null);
+    setPredictionsHistory([]);
+    setDozenHits(0);
+    setDozenMisses(0);
     setError('');
   };
 
@@ -169,6 +229,12 @@ function App() {
               <div className="historical-header">
                 <h3>Números Históricos ({historicalNumbers.length})</h3>
                 <div>
+                  <button 
+                    onClick={() => setShowHistoricalNumbers(!showHistoricalNumbers)}
+                    className="btn btn-small"
+                  >
+                    {showHistoricalNumbers ? 'Contraer' : 'Expandir'}
+                  </button>
                   <button onClick={handleRemoveLastNumber} className="btn btn-small">
                     Eliminar Último
                   </button>
@@ -178,13 +244,15 @@ function App() {
                 </div>
               </div>
               
-              <div className="numbers-grid">
-                {historicalNumbers.map((num, idx) => (
-                  <div key={idx} className={`number-chip ${getColorClass(num)}`}>
-                    {num}
-                  </div>
-                ))}
-              </div>
+              {showHistoricalNumbers && (
+                <div className="numbers-grid">
+                  {historicalNumbers.map((num, idx) => (
+                    <div key={idx} className={`number-chip ${getColorClass(num)}`}>
+                      {num}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -204,64 +272,139 @@ function App() {
 
             {showDozenView && (
               <>
-                {/* Probability Bars */}
+                {/* Predictions History Stats */}
+                {predictionsHistory.length > 0 && (
+                  <div className="predictions-stats">
+                    <h3>📊 Historial de Aciertos (2 Docenas)</h3>
+                    <div className="stats-summary">
+                      <div className="stat-box hit">
+                        <div className="stat-number">{dozenHits}</div>
+                        <div className="stat-label">Aciertos</div>
+                      </div>
+                      <div className="stat-box miss">
+                        <div className="stat-number">{dozenMisses}</div>
+                        <div className="stat-label">Fallos</div>
+                      </div>
+                      <div className="stat-box percentage">
+                        <div className="stat-number">
+                          {dozenHits + dozenMisses > 0 
+                            ? Math.round((dozenHits / (dozenHits + dozenMisses)) * 100)
+                            : 0}%
+                        </div>
+                        <div className="stat-label">Efectividad</div>
+                      </div>
+                    </div>
+                    
+                    <div className="recent-predictions">
+                      <h4>Últimas 5 predicciones:</h4>
+                      {predictionsHistory.slice(0, 5).map((pred, idx) => (
+                        <div key={idx} className={`prediction-history-item ${pred.isHit ? 'hit' : 'miss'}`}>
+                          <span className={`number-chip small ${getColorClass(pred.number)}`}>
+                            {pred.number}
+                          </span>
+                          <span className="prediction-arrow">→</span>
+                          <span className="actual-dozen">{pred.actualDozen}</span>
+                          <span className="vs-text">vs</span>
+                          <span className="predicted-dozens">
+                            {pred.predictedDozens.join(', ')}
+                          </span>
+                          <span className={`result-badge ${pred.isHit ? 'hit' : 'miss'}`}>
+                            {pred.isHit ? '✓ Acertó' : '✗ Falló'}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Probability Bars with Top 2 Highlighting */}
                 <div className="dozen-predictions">
-                  <h3>📊 Probabilidades por Docena</h3>
+                  <h3>🎯 Apuesta en las 2 Docenas con Mayor Probabilidad</h3>
                   
-                  <div className="dozen-bar-container">
-                    <div className="dozen-bar-label">
-                      <span className="dozen-name">1ª Docena (1-12)</span>
-                      <span className="dozen-percent">
-                        {dozenAnalysis.predictions?.['1st']?.toFixed(1) || 0}%
-                      </span>
-                    </div>
-                    <div className="dozen-bar-track">
-                      <div 
-                        className="dozen-bar-fill first-dozen"
-                        style={{
-                          width: `${dozenAnalysis.predictions?.['1st'] || 0}%`
-                        }}
-                      />
-                    </div>
-                  </div>
+                  {(() => {
+                    const sortedDozens = Object.entries(dozenAnalysis.predictions || {})
+                      .sort((a, b) => b[1] - a[1]);
+                    const top2 = sortedDozens.slice(0, 2).map(d => d[0]);
+                    
+                    return (
+                      <>
+                        {/* 1st Dozen */}
+                        <div className={`dozen-bar-container ${top2.includes('1st') ? 'recommended' : ''}`}>
+                          <div className="dozen-bar-label">
+                            <span className="dozen-name">
+                              1ª Docena (1-12)
+                              {top2.includes('1st') && <span className="recommended-badge">⭐ Apostar</span>}
+                            </span>
+                            <span className="dozen-percent">
+                              {dozenAnalysis.predictions?.['1st']?.toFixed(1) || 0}%
+                            </span>
+                          </div>
+                          <div className="dozen-bar-track">
+                            <div 
+                              className="dozen-bar-fill first-dozen"
+                              style={{
+                                width: `${dozenAnalysis.predictions?.['1st'] || 0}%`
+                              }}
+                            />
+                          </div>
+                        </div>
 
-                  <div className="dozen-bar-container">
-                    <div className="dozen-bar-label">
-                      <span className="dozen-name">2ª Docena (13-24)</span>
-                      <span className="dozen-percent">
-                        {dozenAnalysis.predictions?.['2nd']?.toFixed(1) || 0}%
-                      </span>
-                    </div>
-                    <div className="dozen-bar-track">
-                      <div 
-                        className="dozen-bar-fill second-dozen"
-                        style={{
-                          width: `${dozenAnalysis.predictions?.['2nd'] || 0}%`
-                        }}
-                      />
-                    </div>
-                  </div>
+                        {/* 2nd Dozen */}
+                        <div className={`dozen-bar-container ${top2.includes('2nd') ? 'recommended' : ''}`}>
+                          <div className="dozen-bar-label">
+                            <span className="dozen-name">
+                              2ª Docena (13-24)
+                              {top2.includes('2nd') && <span className="recommended-badge">⭐ Apostar</span>}
+                            </span>
+                            <span className="dozen-percent">
+                              {dozenAnalysis.predictions?.['2nd']?.toFixed(1) || 0}%
+                            </span>
+                          </div>
+                          <div className="dozen-bar-track">
+                            <div 
+                              className="dozen-bar-fill second-dozen"
+                              style={{
+                                width: `${dozenAnalysis.predictions?.['2nd'] || 0}%`
+                              }}
+                            />
+                          </div>
+                        </div>
 
-                  <div className="dozen-bar-container">
-                    <div className="dozen-bar-label">
-                      <span className="dozen-name">3ª Docena (25-36)</span>
-                      <span className="dozen-percent">
-                        {dozenAnalysis.predictions?.['3rd']?.toFixed(1) || 0}%
-                      </span>
-                    </div>
-                    <div className="dozen-bar-track">
-                      <div 
-                        className="dozen-bar-fill third-dozen"
-                        style={{
-                          width: `${dozenAnalysis.predictions?.['3rd'] || 0}%`
-                        }}
-                      />
-                    </div>
-                  </div>
+                        {/* 3rd Dozen */}
+                        <div className={`dozen-bar-container ${top2.includes('3rd') ? 'recommended' : ''}`}>
+                          <div className="dozen-bar-label">
+                            <span className="dozen-name">
+                              3ª Docena (25-36)
+                              {top2.includes('3rd') && <span className="recommended-badge">⭐ Apostar</span>}
+                            </span>
+                            <span className="dozen-percent">
+                              {dozenAnalysis.predictions?.['3rd']?.toFixed(1) || 0}%
+                            </span>
+                          </div>
+                          <div className="dozen-bar-track">
+                            <div 
+                              className="dozen-bar-fill third-dozen"
+                              style={{
+                                width: `${dozenAnalysis.predictions?.['3rd'] || 0}%`
+                              }}
+                            />
+                          </div>
+                        </div>
 
-                  <div className="confidence-badge">
-                    Confianza: <strong>{dozenAnalysis.confidence}</strong>
-                  </div>
+                        <div className="confidence-badge-detailed">
+                          <div className="confidence-main">
+                            Confianza: <strong>{dozenAnalysis.confidence}</strong>
+                          </div>
+                          <div className="confidence-explanation">
+                            Probabilidad combinada (2 docenas): {' '}
+                            <strong>
+                              {(sortedDozens[0][1] + sortedDozens[1][1]).toFixed(1)}%
+                            </strong>
+                          </div>
+                        </div>
+                      </>
+                    );
+                  })()}
                 </div>
 
                 {/* Strong Patterns */}

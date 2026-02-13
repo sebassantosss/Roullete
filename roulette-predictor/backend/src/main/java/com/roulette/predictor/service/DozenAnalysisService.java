@@ -386,13 +386,32 @@ public class DozenAnalysisService {
     }
 
     private String calculateConfidenceLevel(Map<String, Double> predictions) {
-        double max = predictions.values().stream().max(Double::compare).orElse(0.0);
-        double min = predictions.values().stream().min(Double::compare).orElse(0.0);
-        double spread = max - min;
+        // Get top 2 dozens
+        List<Double> sortedProbs = predictions.values().stream()
+                .sorted(Comparator.reverseOrder())
+                .collect(Collectors.toList());
+        
+        if (sortedProbs.size() < 2) {
+            return "LOW";
+        }
+        
+        double top1 = sortedProbs.get(0);
+        double top2 = sortedProbs.get(1);
+        double bottom = sortedProbs.get(2);
+        
+        // Sum of top 2 dozens
+        double combinedProb = top1 + top2;
+        
+        // Spread between top 2 and bottom
+        double avgTop2 = combinedProb / 2;
+        double spread = avgTop2 - bottom;
 
-        if (spread >= 30) return "VERY_HIGH";
-        if (spread >= 20) return "HIGH";
-        if (spread >= 10) return "MEDIUM";
+        // Confidence based on:
+        // 1. Combined probability of top 2
+        // 2. Separation from the third dozen
+        if (combinedProb >= 70 && spread >= 15) return "VERY_HIGH";
+        if (combinedProb >= 65 && spread >= 10) return "HIGH";
+        if (combinedProb >= 60 && spread >= 5) return "MEDIUM";
         return "LOW";
     }
 }
